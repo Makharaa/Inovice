@@ -53,9 +53,12 @@ echo
 
 # Fail loudly if a deployed PHP file has a syntax error (changed files only).
 if command -v php >/dev/null 2>&1; then
-    git diff --name-only --diff-filter=AM "$OLD" "$NEW" -- '*.php' | while read -r file; do
-        php -l "$file" >/dev/null || { echo "SYNTAX ERROR in $file - roll back (below)!" >&2; exit 1; }
-    done
+    if ! git diff --name-only --diff-filter=AM "$OLD" "$NEW" -- '*.php' | while read -r file; do
+        php -l "$file" >/dev/null || { echo "SYNTAX ERROR in $file" >&2; exit 1; }
+    done; then
+        echo "The new version is broken. Roll back NOW with:  git reset --hard $OLD" >&2
+        exit 1
+    fi
 fi
 
 echo "Done. Next steps:"
