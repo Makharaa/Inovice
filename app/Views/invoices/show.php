@@ -1,9 +1,14 @@
-<?php $isOwner = (int) $invoice['user_id'] === \App\Core\Auth::id(); ?>
+<?php
+$isOwner = (int) $invoice['user_id'] === \App\Core\Auth::id();
+$isLocked = \App\Models\Invoice::isLocked($invoice);
+?>
 <div class="document-page-actions">
     <a class="button ghost" href="<?= url('invoices') ?>"><i data-lucide="arrow-left" aria-hidden="true"></i> ინვოისები</a>
     <div>
         <?php if ($isOwner): ?>
-            <a class="button secondary" href="<?= url('invoices/' . $invoice['id'] . '/edit') ?>"><i data-lucide="square-pen" aria-hidden="true"></i> რედაქტირება</a>
+            <?php if (!$isLocked): ?>
+                <a class="button secondary" href="<?= url('invoices/' . $invoice['id'] . '/edit') ?>"><i data-lucide="square-pen" aria-hidden="true"></i> რედაქტირება</a>
+            <?php endif; ?>
             <form class="inline-form" method="post" action="<?= url('invoices/' . $invoice['id'] . '/duplicate') ?>"><?= csrf_field() ?><button class="button secondary" type="submit"><i data-lucide="copy" aria-hidden="true"></i> ასლის შექმნა</button></form>
         <?php endif; ?>
         <a class="button secondary" href="<?= url('invoices/' . $invoice['id'] . '/print') ?>" target="_blank"><i data-lucide="printer" aria-hidden="true"></i> ბეჭდვა</a>
@@ -28,7 +33,11 @@
     <iframe class="invoice-preview-frame" src="<?= url('invoices/' . $invoice['id'] . '/print?embed=1') ?>" title="ინვოისის წინასწარი ნახვა"></iframe>
 </section>
 
-<?php if ($isOwner): ?>
+<?php if ($isOwner && $isLocked): ?>
+    <section class="danger-zone">
+        <div><h3>გაცემული ინვოისი</h3><p>გაცემული ინვოისის შეცვლა ან წაშლა შეუძლებელია. შეცდომის გასასწორებლად შექმენით ასლი და გასცით ახალი ინვოისი.</p></div>
+    </section>
+<?php elseif ($isOwner): ?>
     <section class="danger-zone">
         <div><h3>ინვოისის წაშლა</h3><p>ჩანაწერი ისტორიიდან დაიმალება, მაგრამ ინვოისის ნომერი ხელახლა აღარ გამოიყენება.</p></div>
         <form method="post" action="<?= url('invoices/' . $invoice['id'] . '/delete') ?>" data-confirm="ნამდვილად გსურთ ინვოისის წაშლა?"><?= csrf_field() ?><button class="button danger-button" type="submit"><i data-lucide="trash-2" aria-hidden="true"></i> ინვოისის წაშლა</button></form>

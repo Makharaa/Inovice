@@ -135,5 +135,38 @@ check('prefix with _ and - works', number_of(make_invoice($user, $weird, $client
 check('prefix with _ and - continues', number_of(make_invoice($user, $weird, $client, '2026-01-02')) === 'A_B-C-2026-0002');
 
 // ---------------------------------------------------------------------------
+echo "\nIssued invoices are final\n";
+$lockUser = make_user('lock@example.com');
+$lockIssuer = make_issuer($lockUser);
+$lockClient = make_client($lockUser);
+$draft = make_invoice($lockUser, $lockIssuer, $lockClient, '2026-05-01', 'draft');
+$issued = make_invoice($lockUser, $lockIssuer, $lockClient, '2026-05-02', 'issued');
+$editInput = [
+    'issuer_id' => $lockIssuer, 'client_id' => $lockClient, 'issue_date' => '2026-05-03', 'status' => 'draft',
+    'items' => [['description' => 'CHANGED', 'unit' => 'pcs', 'quantity' => 1, 'unit_price' => 5]],
+];
+$descriptionOf = static fn (int $id): string => (string) Database::connection()
+    ->query("SELECT description FROM invoice_items WHERE invoice_id = {$id}")->fetchColumn();
+
+(new InvoiceService())->update($draft, $lockUser, $editInput);
+check('draft invoice can be edited', $descriptionOf($draft) === 'CHANGED');
+
+$rejected = false;
+try {
+    (new InvoiceService())->update($issued, $lockUser, $editInput);
+} catch (UserFacingException) {
+    $rejected = true;
+}
+check('issued invoice edit is rejected', $rejected);
+check('issued invoice content unchanged', $descriptionOf($issued) === 'Service');
+check('issued invoice stays issued (no downgrade to draft)', (string) Database::connection()->query("SELECT status FROM invoices WHERE id = {$issued}")->fetchColumn() === 'issued');
+check('issued invoice cannot be deleted', Invoice::softDelete($issued, $lockUser) === false);
+check('issued invoice is still listed', Invoice::findAccessible($issued, $lockUser) !== null);
+check('draft invoice can be deleted', Invoice::softDelete($draft, $lockUser) === true);
+
+$copy = (new InvoiceService())->duplicate($issued, $lockUser);
+check('issued invoice can be duplicated as a draft', (string) Database::connection()->query("SELECT status FROM invoices WHERE id = {$copy}")->fetchColumn() === 'draft');
+
+// ---------------------------------------------------------------------------
 echo $failures === 0 ? "\nAll integration tests passed.\n" : "\n{$failures} integration check(s) FAILED.\n";
 exit($failures === 0 ? 0 : 1);

@@ -10,6 +10,14 @@ use PDO;
 
 final class Invoice
 {
+    public const LOCKED_MESSAGE = 'გაცემული ინვოისის შეცვლა ან წაშლა შეუძლებელია. შეცდომის გასასწორებლად შექმენით ასლი.';
+
+    /** Issued invoices are final: they can be viewed, printed and duplicated, but not edited or deleted. */
+    public static function isLocked(array $invoice): bool
+    {
+        return ($invoice['status'] ?? '') === 'issued';
+    }
+
     public static function findAccessible(int $id, int $userId, bool $admin = false): ?array
     {
         $sql = 'SELECT invoices.*, users.name AS owner_name
@@ -105,7 +113,7 @@ final class Invoice
     {
         $statement = Database::connection()->prepare(
             'UPDATE invoices SET deleted_at = NOW()
-             WHERE id = :id AND user_id = :user_id AND deleted_at IS NULL'
+             WHERE id = :id AND user_id = :user_id AND deleted_at IS NULL AND status = \'draft\''
         );
         $statement->execute(['id' => $id, 'user_id' => $userId]);
         return $statement->rowCount() > 0;

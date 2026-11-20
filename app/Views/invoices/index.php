@@ -37,7 +37,7 @@
                         <td class="amount" data-label="ჯამი"><?= money($row['total'], $row['currency']) ?></td>
                         <td class="actions-cell" data-label="მოქმედება"><div class="table-actions">
                             <a class="icon-button" href="<?= url('invoices/' . $row['id']) ?>" title="ნახვა" aria-label="ნახვა"><i data-lucide="eye" aria-hidden="true"></i></a>
-                            <?php if ((int) $row['user_id'] === \App\Core\Auth::id()): ?><a class="icon-button" href="<?= url('invoices/' . $row['id'] . '/edit') ?>" title="რედაქტირება" aria-label="რედაქტირება"><i data-lucide="square-pen" aria-hidden="true"></i></a><?php endif; ?>
+                            <?php if ((int) $row['user_id'] === \App\Core\Auth::id() && $row['status'] !== 'issued'): ?><a class="icon-button" href="<?= url('invoices/' . $row['id'] . '/edit') ?>" title="რედაქტირება" aria-label="რედაქტირება"><i data-lucide="square-pen" aria-hidden="true"></i></a><?php endif; ?>
                             <a class="icon-button" href="<?= url('invoices/' . $row['id'] . '/pdf') ?>" target="_blank" title="PDF" aria-label="PDF ჩამოტვირთვა"><i data-lucide="download" aria-hidden="true"></i></a>
                         </div></td>
                     </tr>

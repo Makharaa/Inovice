@@ -119,6 +119,14 @@
         calculate();
     });
 
+    form.querySelectorAll('[data-confirm-submit]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            if (!window.confirm(button.dataset.confirmSubmit)) {
+                event.preventDefault();
+            }
+        });
+    });
+
     vatCheckbox.addEventListener('change', calculate);
     currencySelect.addEventListener('change', calculate);
     itemsContainer.querySelectorAll('[data-item]').forEach(bindRow);

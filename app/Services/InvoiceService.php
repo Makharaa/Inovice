@@ -78,6 +78,9 @@ final class InvoiceService
         if (!$current) {
             throw new UserFacingException('ინვოისი ვერ მოიძებნა.');
         }
+        if (Invoice::isLocked($current)) {
+            throw new UserFacingException(Invoice::LOCKED_MESSAGE);
+        }
 
         $issuer = Issuer::findOwned((int) ($input['issuer_id'] ?? 0), $userId);
         $client = Client::findOwned((int) ($input['client_id'] ?? 0), $userId);
@@ -98,6 +101,15 @@ final class InvoiceService
         $pdo->beginTransaction();
 
         try {
+            // Re-check under a row lock: the invoice may have been issued in another request meanwhile.
+            $lock = $pdo->prepare(
+                'SELECT status FROM invoices WHERE id = :id AND user_id = :user_id AND deleted_at IS NULL FOR UPDATE'
+            );
+            $lock->execute(['id' => $invoiceId, 'user_id' => $userId]);
+            if ($lock->fetchColumn() !== 'draft') {
+                throw new UserFacingException(Invoice::LOCKED_MESSAGE);
+            }
+
             $payload = $this->invoicePayload(
                 $userId,
                 $issuer,
@@ -120,7 +132,7 @@ final class InvoiceService
                     client_snapshot = :client_snapshot, subtotal = :subtotal,
                     discount_total = :discount_total, vat_total = :vat_total,
                     total = :total, notes = :notes, updated_at = NOW()
-                 WHERE id = :id AND user_id = :owner_id AND deleted_at IS NULL'
+                 WHERE id = :id AND user_id = :owner_id AND deleted_at IS NULL AND status = \'draft\''
             );
             $statement->execute($payload);
             $pdo->prepare('DELETE FROM invoice_items WHERE invoice_id = :id')->execute(['id' => $invoiceId]);

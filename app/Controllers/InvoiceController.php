@@ -111,6 +111,10 @@ final class InvoiceController extends Controller
         if (!$invoice) {
             $this->notFound();
         }
+        if (Invoice::isLocked($invoice)) {
+            flash('error', Invoice::LOCKED_MESSAGE);
+            redirect("invoices/{$id}");
+        }
         $this->render('invoices.form', [
             'pageTitle' => 'ინვოისის რედაქტირება',
             'invoice' => $invoice,
@@ -162,8 +166,11 @@ final class InvoiceController extends Controller
     {
         $user = $this->requireAuth();
         $this->validateCsrf();
-        Invoice::softDelete((int) $id, (int) $user['id']);
-        flash('success', 'ინვოისი წაიშალა და ისტორიიდან დამალულია.');
+        if (Invoice::softDelete((int) $id, (int) $user['id'])) {
+            flash('success', 'ინვოისი წაიშალა და ისტორიიდან დამალულია.');
+        } else {
+            flash('error', Invoice::LOCKED_MESSAGE);
+        }
         redirect('invoices');
     }
 

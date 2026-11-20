@@ -125,7 +125,7 @@ $pageScripts = ['invoice-editor.js'];
     <div class="editor-actions">
         <a class="button ghost" href="<?= url('invoices') ?>">გაუქმება</a>
         <button class="button secondary" type="submit" name="status" value="draft"><i data-lucide="save" aria-hidden="true"></i> მონახაზად შენახვა</button>
-        <button class="button primary" type="submit" name="status" value="issued"><i data-lucide="circle-check" aria-hidden="true"></i> შენახვა და გახსნა</button>
+        <button class="button primary" type="submit" name="status" value="issued" data-confirm-submit="ინვოისის გაცემის შემდეგ მისი შეცვლა ან წაშლა შეუძლებელი იქნება. გავცეთ ინვოისი?"><i data-lucide="circle-check" aria-hidden="true"></i> ინვოისის გაცემა</button>
     </div>
 </form>
 
