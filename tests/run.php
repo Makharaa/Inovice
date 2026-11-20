@@ -251,3 +251,36 @@ foreach ($ipCases as $index => [$remote, $forwarded, $trusted, $expected]) {
 }
 
 echo "ClientIp tests passed.\n";
+
+// PasswordPolicy
+require dirname(__DIR__) . '/app/Support/PasswordPolicy.php';
+use App\Support\PasswordPolicy;
+
+$policyCases = [
+    // [password, related values, acceptable?]
+    ['short1', [], false],
+    ['1234567', [], false],
+    ['12345678', [], false],            // common + sequence
+    ['87654321', [], false],            // descending sequence
+    ['abcdefgh', [], false],
+    ['aaaaaaaa', [], false],
+    ['Password1', [], false],           // common after lower-casing
+    ['ADMINADMIN', [], false],
+    ['makhara@example.com', ['makhara@example.com'], false],     // equals e-mail
+    ['makhara2026', ['makhara@example.com'], false],             // contains e-mail local part
+    ['giorgi-giorgi', ['giorgi@example.com'], false],
+    ['tbilisi-sunrise-47', ['x@example.com', 'Nino'], true],
+    ['მზიანი-დილა-2026', [], true],                               // Georgian letters, 16 chars
+    ['correct horse battery', [], true],
+    ['Zx9$kLm2', [], true],
+    ['abc', ['abc@example.com'], false],                         // too short wins
+    ['nino-nino-nino', ['x@example.com', 'Nino'], false],        // contains the name? (>=4 chars)
+];
+foreach ($policyCases as $index => [$password, $related, $acceptable]) {
+    $result = PasswordPolicy::check($password, $related);
+    if (($result === null) !== $acceptable) {
+        throw new RuntimeException("PasswordPolicy case {$index} ('{$password}'): expected " . ($acceptable ? 'accepted' : 'rejected') . ', got ' . var_export($result, true));
+    }
+}
+
+echo "PasswordPolicy tests passed.\n";

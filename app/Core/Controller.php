@@ -16,7 +16,9 @@ abstract class Controller
         $user = Auth::user();
 
         if (!$user) {
-            flash('error', 'გთხოვთ, გაიაროთ ავტორიზაცია.');
+            if (empty($_SESSION['_flash']['error'])) { // keep a more specific message, e.g. "session expired"
+                flash('error', 'გთხოვთ, გაიაროთ ავტორიზაცია.');
+            }
             redirect('login');
         }
 

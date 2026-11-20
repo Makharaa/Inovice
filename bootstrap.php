@@ -35,6 +35,8 @@ date_default_timezone_set((string) config('app.timezone', 'Asia/Tbilisi'));
 if (session_status() !== PHP_SESSION_ACTIVE) {
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
+    // Server-side session files must live at least as long as the idle timeout.
+    ini_set('session.gc_maxlifetime', (string) max(1440, (int) round(((float) config('app.session_idle_minutes', 120)) * 60) + 300));
     session_name((string) config('app.session_name', 'makhara_invoice'));
     session_set_cookie_params([
         'lifetime' => 0,

@@ -44,6 +44,7 @@ final class Auth
         unset($_SESSION['_csrf']); // never carry the pre-login CSRF token into the authenticated session
         $_SESSION['user_id'] = (int) $user['id'];
         $_SESSION['pw_fp'] = self::fingerprint((string) $user['password_hash']);
+        $_SESSION['last_activity'] = time();
         unset($user['password_hash']);
         self::$resolvedUser = $user;
         self::$resolved = true;
@@ -71,6 +72,15 @@ final class Auth
         if ($id < 1) {
             return null;
         }
+
+        // Sign out sessions that were left idle for too long (config app.session_idle_minutes, 0 = never).
+        $idleSeconds = (int) round(((float) config('app.session_idle_minutes', 120)) * 60);
+        if ($idleSeconds > 0 && time() - (int) ($_SESSION['last_activity'] ?? 0) > $idleSeconds) {
+            self::logout();
+            flash('error', 'უმოქმედობის გამო სესია დასრულდა. გთხოვთ, შედით თავიდან.');
+            return null;
+        }
+        $_SESSION['last_activity'] = time();
 
         $statement = Database::connection()->prepare(
             'SELECT id, name, email, role, is_active, last_login_at, last_login_ip, password_hash
@@ -132,7 +142,7 @@ final class Auth
     {
         self::$resolved = true;
         self::$resolvedUser = null;
-        unset($_SESSION['user_id'], $_SESSION['pw_fp'], $_SESSION['_csrf']);
+        unset($_SESSION['user_id'], $_SESSION['pw_fp'], $_SESSION['_csrf'], $_SESSION['last_activity']);
         session_regenerate_id(true);
     }
 

@@ -54,9 +54,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    require_once $basePath . '/app/Support/PasswordPolicy.php';
     $adminPassword = (string) ($_POST['admin_password'] ?? '');
-    if (strlen($adminPassword) < 8) {
-        $errors[] = 'ადმინისტრატორის პაროლი მინიმუმ 8 სიმბოლო უნდა იყოს.';
+    $passwordProblem = \App\Support\PasswordPolicy::check(
+        $adminPassword,
+        [(string) ($_POST['admin_email'] ?? ''), (string) ($_POST['admin_name'] ?? '')]
+    );
+    if ($passwordProblem !== null) {
+        $errors[] = $passwordProblem;
     }
     if ($adminPassword !== (string) ($_POST['admin_password_confirmation'] ?? '')) {
         $errors[] = 'პაროლის დადასტურება არ ემთხვევა.';

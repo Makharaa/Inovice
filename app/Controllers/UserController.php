@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Models\User;
+use App\Support\PasswordPolicy;
 use App\Support\Validation;
 
 final class UserController extends Controller
@@ -35,8 +36,12 @@ final class UserController extends Controller
         $input = $_POST;
         $errors = $this->validate($input);
 
-        if (mb_strlen((string) ($input['password'] ?? '')) < 8) {
-            $errors['password'] = 'პაროლი უნდა შეიცავდეს მინიმუმ 8 სიმბოლოს.';
+        $problem = PasswordPolicy::check(
+            (string) ($input['password'] ?? ''),
+            [(string) ($input['email'] ?? ''), (string) ($input['name'] ?? '')]
+        );
+        if ($problem !== null) {
+            $errors['password'] = $problem;
         }
 
         if ($errors) {
@@ -96,13 +101,18 @@ final class UserController extends Controller
     {
         $this->requireAdmin();
         $this->validateCsrf();
-        if (!User::find((int) $id)) {
+        $target = User::find((int) $id);
+        if (!$target) {
             $this->notFound();
         }
 
         $password = (string) ($_POST['password'] ?? '');
-        if (mb_strlen($password) < 8 || $password !== (string) ($_POST['password_confirmation'] ?? '')) {
-            flash('error', 'პაროლი უნდა შეიცავდეს მინიმუმ 8 სიმბოლოს და დადასტურება უნდა ემთხვეოდეს.');
+        if ($password !== (string) ($_POST['password_confirmation'] ?? '')) {
+            flash('error', 'პაროლის დადასტურება არ ემთხვევა.');
+            redirect("users/{$id}/edit");
+        }
+        if ($problem = PasswordPolicy::check($password, [(string) $target['email'], (string) $target['name']])) {
+            flash('error', $problem);
             redirect("users/{$id}/edit");
         }
 

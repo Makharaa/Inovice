@@ -9,6 +9,7 @@ use App\Core\Controller;
 use App\Core\Database;
 use App\Models\User;
 use App\Services\LoginThrottle;
+use App\Support\PasswordPolicy;
 use App\Support\Validation;
 
 final class ProfileController extends Controller
@@ -67,8 +68,12 @@ final class ProfileController extends Controller
             redirect('profile');
         }
 
-        if (mb_strlen($password) < 8 || $password !== (string) ($_POST['password_confirmation'] ?? '')) {
-            flash('error', 'პაროლი უნდა შეიცავდეს მინიმუმ 8 სიმბოლოს და დადასტურება უნდა ემთხვეოდეს.');
+        if ($password !== (string) ($_POST['password_confirmation'] ?? '')) {
+            flash('error', 'პაროლის დადასტურება არ ემთხვევა.');
+            redirect('profile');
+        }
+        if ($problem = PasswordPolicy::check($password, [(string) $user['email'], (string) $user['name']])) {
+            flash('error', $problem);
             redirect('profile');
         }
 
