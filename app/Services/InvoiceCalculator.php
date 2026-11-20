@@ -4,8 +4,25 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\UserFacingException;
+
+/**
+ * All money maths is done with integers (tetri/cents) and half-up rounding.
+ *
+ * Every line satisfies   base_net - discount_net = net   and   net + vat = total,
+ * so the invoice summary always adds up to the cent:
+ *
+ *   subtotal - discount_total + vat_total = total
+ *
+ * public/assets/js/invoice-editor.js implements the same algorithm for the live preview.
+ */
 final class InvoiceCalculator
 {
+    /** Largest allowed value of a single line before discount (in tetri) = 100 000 000.00. */
+    private const MAX_LINE_CENTS = 10_000_000_000;
+    private const MAX_QUANTITY = 1_000_000;
+    private const MAX_UNIT_PRICE = 100_000_000;
+
     /** Allowed unit keys come from the Georgian language file (single source of truth). */
     private static function allowedUnits(): array
     {
@@ -20,66 +37,75 @@ final class InvoiceCalculator
 
     public function calculate(array $rawItems, bool $vatPayer, bool $pricesIncludeVat, float $vatRate = 18.0): array
     {
+        $rateBasis = (int) round($vatRate * 100);           // 18.00 % => 1800
         $items = [];
-        $subtotal = 0.0;
-        $discountTotal = 0.0;
-        $vatTotal = 0.0;
-        $grandTotal = 0.0;
+        $subtotal = 0;
+        $discountTotal = 0;
+        $vatTotal = 0;
+        $grandTotal = 0;
 
-        foreach ($rawItems as $index => $item) {
-            $description = trim((string) ($item['description'] ?? ''));
-            $quantity = round(max(0, (float) ($item['quantity'] ?? 0)), 3);
-            $unitPrice = round(max(0, (float) ($item['unit_price'] ?? 0)), 4);
-            $unit = trim((string) ($item['unit'] ?? 'pcs'));
+        foreach ($rawItems as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $description = is_scalar($item['description'] ?? null) ? trim((string) $item['description']) : '';
+            $quantity = $this->number($item['quantity'] ?? 0);
+            $unitPrice = $this->number($item['unit_price'] ?? 0);
+            $unit = is_scalar($item['unit'] ?? null) ? trim((string) $item['unit']) : 'pcs';
             if (!array_key_exists($unit, self::allowedUnits())) {
                 $unit = 'pcs';
             }
-            $discountPercent = min(100, max(0, (float) ($item['discount_percent'] ?? 0)));
+            $discountBasis = (int) round(min(100.0, max(0.0, $this->number($item['discount_percent'] ?? 0))) * 100);
 
             if ($description === '' || $quantity <= 0) {
                 continue;
             }
+            if ($quantity > self::MAX_QUANTITY || $unitPrice > self::MAX_UNIT_PRICE) {
+                throw new UserFacingException('რაოდენობა ან ფასი დასაშვებ ზღვარს აჭარბებს.');
+            }
 
-            $base = $quantity * $unitPrice;
-            $discount = $base * ($discountPercent / 100);
+            $quantityMilli = (int) round($quantity * 1000);   // 3 decimals
+            $priceUnits = (int) round($unitPrice * 10000);    // 4 decimals
+            $product = $quantityMilli * $priceUnits;           // = base * 10^7
+            if ($product > self::MAX_LINE_CENTS * 100_000) {
+                throw new UserFacingException('პოზიციის თანხა ზედმეტად დიდია.');
+            }
+
+            $base = intdiv($product + 50_000, 100_000);                    // base, tetri
+            $discount = intdiv($base * $discountBasis + 5_000, 10_000);    // discount, tetri
             $discounted = $base - $discount;
 
             if ($vatPayer && $pricesIncludeVat) {
-                $baseNet = $base / (1 + ($vatRate / 100));
-                $discountNet = $discount / (1 + ($vatRate / 100));
-                $net = $discounted / (1 + ($vatRate / 100));
-                $vat = $discounted - $net;
                 $total = $discounted;
+                $net = $this->netFromGross($discounted, $rateBasis);
+                $vat = $total - $net;
+                $baseNet = $this->netFromGross($base, $rateBasis);
+                $discountNet = $baseNet - $net;
             } elseif ($vatPayer) {
-                $baseNet = $base;
-                $discountNet = $discount;
                 $net = $discounted;
-                $vat = $net * ($vatRate / 100);
+                $vat = intdiv($net * $rateBasis + 5_000, 10_000);
                 $total = $net + $vat;
-            } else {
                 $baseNet = $base;
                 $discountNet = $discount;
+            } else {
                 $net = $discounted;
-                $vat = 0.0;
+                $vat = 0;
                 $total = $discounted;
+                $baseNet = $base;
+                $discountNet = $discount;
             }
-
-            $baseNet = round($baseNet, 2);
-            $discountNet = round($discountNet, 2);
-            $net = round($net, 2);
-            $vat = round($vat, 2);
-            $total = round($total, 2);
 
             $items[] = [
                 'sort_order' => count($items) + 1,
                 'description' => $description,
                 'unit' => $unit,
-                'quantity' => $quantity,
-                'unit_price' => $unitPrice,
-                'discount_percent' => round($discountPercent, 2),
-                'net_total' => $net,
-                'vat_total' => $vat,
-                'line_total' => $total,
+                'quantity' => $quantityMilli / 1000,
+                'unit_price' => $priceUnits / 10000,
+                'discount_percent' => $discountBasis / 100,
+                'net_total' => $this->money($net),
+                'vat_total' => $this->money($vat),
+                'line_total' => $this->money($total),
             ];
 
             $subtotal += $baseNet;
@@ -88,12 +114,45 @@ final class InvoiceCalculator
             $grandTotal += $total;
         }
 
+        // DECIMAL(14,2) columns hold up to 999 999 999 999.99
+        if ($grandTotal > 99_999_999_999_999 || $subtotal > 99_999_999_999_999) {
+            throw new UserFacingException('ინვოისის ჯამი ზედმეტად დიდია.');
+        }
+
         return [
             'items' => $items,
-            'subtotal' => round($subtotal, 2),
-            'discount_total' => round($discountTotal, 2),
-            'vat_total' => round($vatTotal, 2),
-            'total' => round($grandTotal, 2),
+            'subtotal' => $this->money($subtotal),
+            'discount_total' => $this->money($discountTotal),
+            'vat_total' => $this->money($vatTotal),
+            'total' => $this->money($grandTotal),
         ];
+    }
+
+    /** Non-negative number from user input (0 for garbage/NaN/negative, PHP_FLOAT_MAX for +INF). */
+    private function number(mixed $value): float
+    {
+        if (!is_scalar($value)) {
+            return 0.0;
+        }
+
+        $number = (float) $value;
+        if (is_infinite($number) && $number > 0) {
+            return PHP_FLOAT_MAX; // rejected by the range checks instead of being silently dropped
+        }
+
+        return is_finite($number) && $number > 0 ? $number : 0.0;
+    }
+
+    /** Net amount (tetri) contained in a gross amount, half-up. */
+    private function netFromGross(int $gross, int $rateBasis): int
+    {
+        $divisor = 10_000 + $rateBasis;
+
+        return intdiv($gross * 20_000 + $divisor, 2 * $divisor);
+    }
+
+    private function money(int $tetri): float
+    {
+        return round($tetri / 100, 2);
     }
 }

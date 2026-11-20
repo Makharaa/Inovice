@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+require dirname(__DIR__) . '/app/Support/UserFacingException.php';
 require dirname(__DIR__) . '/app/Services/InvoiceCalculator.php';
 require dirname(__DIR__) . '/app/Services/InvoiceDocumentPaginator.php';
 
@@ -47,6 +48,90 @@ assertAmount(100, $vatIncluded['subtotal'], 'VAT included subtotal');
 assertAmount(10, $vatIncluded['discount_total'], 'VAT included discount');
 assertAmount(16.2, $vatIncluded['vat_total'], 'VAT included tax');
 assertAmount(106.2, $vatIncluded['total'], 'VAT included total');
+
+
+// Half-up rounding must not depend on binary floating point: 3 x 0.335 = 1.005 -> 1.01
+$tie = $calculator->calculate([['description' => 'Tie', 'quantity' => 3, 'unit_price' => 0.335]], false, false);
+assertAmount(1.01, $tie['total'], 'Half-up rounding of 1.005');
+
+// The printed summary must always add up to the cent, for every VAT mode.
+mt_srand(20260101);
+foreach ([[false, false], [true, false], [true, true]] as [$vatPayer, $includesVat]) {
+    for ($run = 0; $run < 3000; $run++) {
+        $lines = [];
+        for ($line = 0, $count = mt_rand(1, 10); $line < $count; $line++) {
+            $lines[] = [
+                'description' => 'Line',
+                'quantity' => mt_rand(1, 20000) / 1000,
+                'unit_price' => mt_rand(1, 5000000) / 10000,
+                'discount_percent' => mt_rand(0, 1) ? 0 : mt_rand(0, 10000) / 100,
+            ];
+        }
+        $result = $calculator->calculate($lines, $vatPayer, $includesVat);
+        $label = sprintf('vat=%d incl=%d run=%d', $vatPayer, $includesVat, $run);
+
+        $summary = round($result['subtotal'] - $result['discount_total'] + $result['vat_total'], 2);
+        assertAmount($result['total'], $summary, "Summary does not add up ({$label})");
+
+        $lineTotal = $lineVat = 0.0;
+        foreach ($result['items'] as $row) {
+            assertAmount($row['line_total'], round($row['net_total'] + $row['vat_total'], 2), "Line net+vat ({$label})");
+            $lineTotal += $row['line_total'];
+            $lineVat += $row['vat_total'];
+        }
+        assertAmount($result['total'], $lineTotal, "Total equals sum of printed lines ({$label})");
+        assertAmount($result['vat_total'], $lineVat, "VAT equals sum of printed lines ({$label})");
+        if (!$vatPayer && $result['vat_total'] != 0.0) {
+            throw new RuntimeException('Non-VAT payer must not get VAT.');
+        }
+    }
+}
+
+// Regression: an 8-line invoice that used to be 1 tetri off (subtotal - discount + VAT != total).
+$regression = $calculator->calculate([
+    ['description' => 'a', 'quantity' => 13, 'unit_price' => 3891.21, 'discount_percent' => 31],
+    ['description' => 'b', 'quantity' => 8, 'unit_price' => 3746.72],
+    ['description' => 'c', 'quantity' => 9, 'unit_price' => 1668.15, 'discount_percent' => 37],
+    ['description' => 'd', 'quantity' => 9, 'unit_price' => 1340.72, 'discount_percent' => 31],
+    ['description' => 'e', 'quantity' => 7, 'unit_price' => 3480.36],
+    ['description' => 'f', 'quantity' => 19, 'unit_price' => 3483.61, 'discount_percent' => 26],
+    ['description' => 'g', 'quantity' => 12, 'unit_price' => 4537.36, 'discount_percent' => 11],
+    ['description' => 'h', 'quantity' => 8, 'unit_price' => 3210.55, 'discount_percent' => 42],
+], true, false);
+assertAmount(
+    $regression['total'],
+    $regression['subtotal'] - $regression['discount_total'] + $regression['vat_total'],
+    'Regression invoice summary'
+);
+
+// Invalid and hostile input.
+$ignored = $calculator->calculate([
+    'not-an-array',
+    ['description' => '', 'quantity' => 1, 'unit_price' => 5],
+    ['description' => 'Zero quantity', 'quantity' => 0, 'unit_price' => 5],
+    ['description' => 'NaN', 'quantity' => 'NaN', 'unit_price' => 5],
+    ['description' => ['array'], 'quantity' => 1, 'unit_price' => 5],
+    ['description' => 'Negative', 'quantity' => -3, 'unit_price' => 5],
+], false, false);
+if ($ignored['items'] !== [] || $ignored['total'] != 0.0) {
+    throw new RuntimeException('Invalid items must be ignored.');
+}
+$negativePrice = $calculator->calculate([['description' => 'Free', 'quantity' => 1, 'unit_price' => -50]], false, false);
+assertAmount(0, $negativePrice['total'], 'Negative price is treated as 0');
+
+foreach ([
+    ['quantity' => '1e30', 'unit_price' => 1],
+    ['quantity' => '1e999', 'unit_price' => 1],
+    ['quantity' => 1, 'unit_price' => '1e30'],
+    ['quantity' => 1000000, 'unit_price' => 100000000],
+] as $hostile) {
+    try {
+        $calculator->calculate([['description' => 'Huge'] + $hostile], true, true);
+        throw new RuntimeException('Oversized amounts must be rejected: ' . json_encode($hostile));
+    } catch (App\Support\UserFacingException) {
+        // expected
+    }
+}
 
 echo "InvoiceCalculator tests passed.\n";
 

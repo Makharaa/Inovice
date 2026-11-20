@@ -10,23 +10,45 @@
     const vatCheckbox = vatOption.querySelector('input');
     let nextIndex = itemsContainer.querySelectorAll('[data-item]').length;
 
-    const amount = (value) => `${Number(value || 0).toFixed(2)} ${currencySelect.value}`;
+    const amount = (tetri) => `${(tetri / 100).toFixed(2)} ${currencySelect.value}`;
 
     const isVatPayer = () => issuerSelect.options[issuerSelect.selectedIndex]?.dataset.vat === '1';
+
+    // Mirrors App\Services\InvoiceCalculator: integer tetri, half-up rounding, so the live
+    // preview always equals what the server stores and prints.
+    const VAT_BASIS = 1800;
+    const MAX_LINE = 10000000000;
+    const round = (value) => Math.round(Number(value.toPrecision(15)));
+    const netFromGross = (gross) => {
+        const divisor = 10000 + VAT_BASIS;
+        return Math.floor((gross * 20000 + divisor) / (2 * divisor));
+    };
+    const positive = (input) => {
+        const number = Number(input.value || 0);
+        return Number.isFinite(number) && number > 0 ? number : 0;
+    };
 
     const calculate = () => {
         let subtotal = 0;
         let discountTotal = 0;
         let vatTotal = 0;
         let grandTotal = 0;
-        const includeVat = isVatPayer() && vatCheckbox.checked;
+        const vatPayer = isVatPayer();
+        const includeVat = vatPayer && vatCheckbox.checked;
 
         itemsContainer.querySelectorAll('[data-item]').forEach((row) => {
-            const quantity = Math.max(0, Number(row.querySelector('[data-quantity]').value || 0));
-            const price = Math.max(0, Number(row.querySelector('[data-price]').value || 0));
-            const discountPercent = Math.min(100, Math.max(0, Number(row.querySelector('[data-discount]').value || 0)));
-            const base = quantity * price;
-            const discount = base * discountPercent / 100;
+            const quantity = round(positive(row.querySelector('[data-quantity]')) * 1000);
+            const price = round(positive(row.querySelector('[data-price]')) * 10000);
+            const discountBasis = round(Math.min(100, positive(row.querySelector('[data-discount]'))) * 100);
+            const product = quantity * price;
+
+            if (quantity <= 0 || product > MAX_LINE * 100000) {
+                row.querySelector('[data-line-total]').textContent = amount(0);
+                return;
+            }
+
+            const base = Math.floor((product + 50000) / 100000);
+            const discount = Math.floor((base * discountBasis + 5000) / 10000);
             const discounted = base - discount;
             let baseNet = base;
             let discountNet = discount;
@@ -34,13 +56,13 @@
             let vat = 0;
             let total = discounted;
 
-            if (isVatPayer() && includeVat) {
-                baseNet = base / 1.18;
-                discountNet = discount / 1.18;
-                net = discounted / 1.18;
-                vat = discounted - net;
-            } else if (isVatPayer()) {
-                vat = net * 0.18;
+            if (includeVat) {
+                net = netFromGross(discounted);
+                vat = total - net;
+                baseNet = netFromGross(base);
+                discountNet = baseNet - net;
+            } else if (vatPayer) {
+                vat = Math.floor((net * VAT_BASIS + 5000) / 10000);
                 total = net + vat;
             }
 
@@ -55,7 +77,7 @@
         document.querySelector('[data-discount-total]').textContent = amount(discountTotal);
         document.querySelector('[data-vat-total]').textContent = amount(vatTotal);
         document.querySelector('[data-grand-total]').textContent = amount(grandTotal);
-        document.querySelector('.vat-total-row').hidden = !isVatPayer();
+        document.querySelector('.vat-total-row').hidden = !vatPayer;
     };
 
     const bindRow = (row) => {
