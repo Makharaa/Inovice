@@ -83,7 +83,7 @@ final class ProfileController extends Controller
     {
         $throttle = new LoginThrottle();
         $key = 'profile:' . $user['email'];
-        $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        $ip = client_ip();
 
         if ($throttle->tooManyAttempts($key, $ip)) {
             return false;

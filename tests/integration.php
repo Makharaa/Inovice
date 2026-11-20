@@ -200,5 +200,34 @@ $numbers = Database::connection()->query("SELECT COUNT(*) - COUNT(DISTINCT issue
 check('no duplicate numbers anywhere', (int) $numbers === 0);
 
 // ---------------------------------------------------------------------------
+echo "\nLogin throttle\n";
+$throttle = new \App\Services\LoginThrottle();
+Database::connection()->exec('DELETE FROM login_attempts');
+
+for ($i = 0; $i < 4; $i++) {
+    $throttle->record('victim@example.com', '203.0.113.1');
+}
+check('4 failures are still allowed', !$throttle->tooManyAttempts('victim@example.com', '203.0.113.1'));
+$throttle->record('victim@example.com', '203.0.113.1');
+check('5th failure locks this e-mail + IP', $throttle->tooManyAttempts('victim@example.com', '203.0.113.1'));
+check('same e-mail from another IP is not locked', !$throttle->tooManyAttempts('victim@example.com', '203.0.113.2'));
+check('e-mail is case/space insensitive', $throttle->tooManyAttempts('  VICTIM@example.com ', '203.0.113.1'));
+$throttle->clear('victim@example.com', '203.0.113.1');
+check('successful login clears the counter', !$throttle->tooManyAttempts('victim@example.com', '203.0.113.1'));
+
+for ($i = 0; $i < 29; $i++) {
+    $throttle->record("spray{$i}@example.com", '198.51.100.50');   // password spraying: one try per e-mail
+}
+check('29 spray attempts from one IP are tolerated', !$throttle->tooManyAttempts('fresh@example.com', '198.51.100.50'));
+$throttle->record('spray29@example.com', '198.51.100.50');
+check('30th attempt locks the whole IP, even for a new e-mail', $throttle->tooManyAttempts('fresh@example.com', '198.51.100.50'));
+check('other IPs are unaffected', !$throttle->tooManyAttempts('fresh@example.com', '198.51.100.51'));
+
+Database::connection()->exec("INSERT INTO login_attempts (email, ip_address, attempted_at) VALUES ('old@example.com', '192.0.2.1', DATE_SUB(NOW(), INTERVAL 2 DAY))");
+$before = (int) Database::connection()->query('SELECT COUNT(*) FROM login_attempts')->fetchColumn();
+check('purge removes only rows older than a day', $throttle->purgeOld() === 1
+    && (int) Database::connection()->query('SELECT COUNT(*) FROM login_attempts')->fetchColumn() === $before - 1);
+
+// ---------------------------------------------------------------------------
 echo $failures === 0 ? "\nAll integration tests passed.\n" : "\n{$failures} integration check(s) FAILED.\n";
 exit($failures === 0 ? 0 : 1);

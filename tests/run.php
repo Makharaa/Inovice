@@ -222,3 +222,32 @@ if ($nonce !== csp_nonce() || strlen((string) base64_decode($nonce, true)) < 16)
 }
 
 echo "HTTPS/CSP helper tests passed.\n";
+
+// ClientIp: X-Forwarded-For is only believed from trusted proxies, and never for entries a client can prepend.
+require dirname(__DIR__) . '/app/Support/ClientIp.php';
+use App\Support\ClientIp;
+
+$ipCases = [
+    // [REMOTE_ADDR, X-Forwarded-For, trusted proxies, expected]
+    ['203.0.113.9', '198.51.100.7', [], '203.0.113.9'],                                    // no proxies configured: header ignored
+    ['203.0.113.9', '198.51.100.7', ['10.0.0.1'], '203.0.113.9'],                          // peer not trusted: header ignored (spoofing)
+    ['10.0.0.1', '198.51.100.7', ['10.0.0.1'], '198.51.100.7'],                            // trusted proxy: believe header
+    ['10.0.0.1', '', ['10.0.0.1'], '10.0.0.1'],                                            // no header
+    ['10.0.0.1', '6.6.6.6, 198.51.100.7', ['10.0.0.1'], '198.51.100.7'],                   // client-prepended entry is ignored
+    ['10.0.0.2', '198.51.100.7, 10.0.0.3', ['10.0.0.0/24'], '198.51.100.7'],               // chain of trusted proxies (CIDR)
+    ['10.0.1.2', '198.51.100.7', ['10.0.0.0/24'], '10.0.1.2'],                             // outside the CIDR
+    ['10.0.0.1', 'not-an-ip', ['10.0.0.1'], '10.0.0.1'],                                   // malformed header
+    ['2001:db8::1', '2001:db8:abcd::5', ['2001:db8::/48'], '2001:db8:abcd::5'],            // IPv6 CIDR
+    ['10.0.0.1', '198.51.100.7', ['10.0.0.1/33'], '10.0.0.1'],                             // invalid prefix: not trusted
+    ['172.16.5.4', '198.51.100.7', ['172.16.0.0/12'], '198.51.100.7'],                     // non-byte-aligned prefix
+    ['172.32.5.4', '198.51.100.7', ['172.16.0.0/12'], '172.32.5.4'],                       // just outside /12
+];
+foreach ($ipCases as $index => [$remote, $forwarded, $trusted, $expected]) {
+    $server = ['REMOTE_ADDR' => $remote] + ($forwarded !== '' ? ['HTTP_X_FORWARDED_FOR' => $forwarded] : []);
+    $actual = ClientIp::resolve($server, $trusted);
+    if ($actual !== $expected) {
+        throw new RuntimeException("ClientIp case {$index}: expected {$expected}, got {$actual}");
+    }
+}
+
+echo "ClientIp tests passed.\n";

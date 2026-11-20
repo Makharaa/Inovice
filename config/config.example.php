@@ -6,6 +6,9 @@ return [
         'url' => 'https://invoice.makhara.ge',
         'timezone' => 'Asia/Tbilisi',
         'session_name' => 'makhara_invoice',
+        // Only if the site is behind a reverse proxy / CDN (nginx, Cloudflare, ...): its IP addresses or
+        // CIDR ranges. Then the visitor IP is read from X-Forwarded-For; otherwise leave the list empty.
+        'trusted_proxies' => [],
     ],
     'database' => [
         'host' => '127.0.0.1',

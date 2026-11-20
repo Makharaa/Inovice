@@ -23,6 +23,14 @@ function config(?string $key = null, mixed $default = null): mixed
     return $config;
 }
 
+/** The visitor's IP address (X-Forwarded-For is only trusted from config app.trusted_proxies). */
+function client_ip(): string
+{
+    $trusted = config('app.trusted_proxies', []);
+
+    return \App\Support\ClientIp::resolve($_SERVER, is_array($trusted) ? $trusted : []);
+}
+
 /** Per-request nonce that allows this page's own inline <script>/<style> under the Content-Security-Policy. */
 function csp_nonce(): string
 {

@@ -8,6 +8,9 @@ use PDO;
 
 final class Auth
 {
+    /** bcrypt hash of a throw-away string, only used to equalise login timing for unknown e-mails. */
+    private const TIMING_HASH = '$2y$10$tWzSdKyBuYKXBN4/T5082.CzwtW.jJ..1zQTpffS48WR.Pv.Qc1sG';
+
     private static ?array $resolvedUser = null;
     private static bool $resolved = false;
 
@@ -21,8 +24,20 @@ final class Auth
         $statement->execute(['email' => mb_strtolower(trim($email))]);
         $user = $statement->fetch(PDO::FETCH_ASSOC);
 
-        if (!$user || !password_verify($password, (string) $user['password_hash'])) {
+        if (!$user) {
+            // Same amount of work as a real check, so response time does not reveal which e-mails exist.
+            password_verify($password, self::TIMING_HASH);
             return false;
+        }
+
+        if (!password_verify($password, (string) $user['password_hash'])) {
+            return false;
+        }
+
+        if (password_needs_rehash((string) $user['password_hash'], PASSWORD_DEFAULT)) {
+            $user['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+            Database::connection()->prepare('UPDATE users SET password_hash = :hash WHERE id = :id')
+                ->execute(['hash' => $user['password_hash'], 'id' => $user['id']]);
         }
 
         session_regenerate_id(true);
@@ -38,7 +53,7 @@ final class Auth
         );
         $update->execute([
             'id' => $user['id'],
-            'ip' => substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+            'ip' => substr(client_ip(), 0, 45),
         ]);
 
         return true;

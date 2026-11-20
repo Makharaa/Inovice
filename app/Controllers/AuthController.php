@@ -27,7 +27,7 @@ final class AuthController extends Controller
         $this->validateCsrf();
         $email = trim((string) ($_POST['email'] ?? ''));
         $password = (string) ($_POST['password'] ?? '');
-        $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        $ip = client_ip();
         $throttle = new LoginThrottle();
 
         if ($throttle->tooManyAttempts($email, $ip)) {
