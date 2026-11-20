@@ -13,7 +13,7 @@
 
 ## არასავალდებულო პარამეტრები (`storage/config.php`, `app` სექცია)
 
-- `'trusted_proxies' => ['IP ან CIDR', ...]` — საჭიროა, თუ საიტი nginx-ის/Cloudflare-ის უკან მუშაობს (იხ. `docs/INSTALLATION_GE.md`, 5.1);
+- `'trusted_proxies' => [...]` — **Cloudflare-ის უკან მუშაობისას აუცილებელია**, თორემ შესვლის ლიმიტი ყველა ვიზიტორისთვის საერთო იქნება. მზა ბლოკს დაგიბეჭდავთ `php tools/cloudflare-trusted-proxies.php` (იხ. `docs/INSTALLATION_GE.md`, 5.1);
 - `'session_idle_minutes' => 120` — უმოქმედობის ვადა წუთებში (0 = გამორთულია).
 
 ## რა უნდა იცოდეთ
