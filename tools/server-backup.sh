@@ -11,6 +11,13 @@
 #   MYSQL_OPTS="..."         extra options for mysql/mysqldump, e.g. "-uroot -pSECRET" or "--defaults-file=/root/.my.cnf"
 #   FORCE=1                  skip the free-space check
 #
+# Back up only SOME sites / databases (much faster):
+#   ONLY="makhara_ge_usr"            sites whose backup name contains any of these words (space separated)
+#   ONLY_DBS="makhara_ge invoice"    only these databases (exact names, space separated)
+#   SKIP_CONFIG=1                    do not copy /etc configuration
+#   SKIP_CHECKSUMS=1                 do not compute SHA256SUMS (saves time on big backups)
+#   LIST=1                           only list the site and database names that could be selected, back up nothing
+#
 set -u
 umask 077
 
@@ -29,19 +36,11 @@ low()  { nice -n 19 ionice -c3 "$@" 2>/dev/null || nice -n 19 "$@"; }   # be gen
 
 [ "$(id -u)" -eq 0 ] || echo "WARNING: not running as root, some files may be unreadable."
 
-# ---------------------------------------------------------------- free space check
-need_kb=$(du -sk "$WWW_ROOT" 2>/dev/null | cut -f1); need_kb=${need_kb:-0}
-free_kb=$(df -Pk "$OUT" | awk 'NR==2 {print $4}')
-echo "Sites: $((need_kb / 1024)) MB   Free space in $OUT: $((free_kb / 1024)) MB"
-if [ "${FORCE:-0}" != 1 ] && [ "$free_kb" -lt $((need_kb + need_kb / 5)) ]; then
-    echo "Not enough free space (need roughly sites size + 20%). Use another disk/folder, or FORCE=1." >&2
-    exit 1
-fi
-
-# ---------------------------------------------------------------- 1. every site as its own archive
-say "Sites"
-: > "$OUT/sites/INVENTORY.txt"
+# ---------------------------------------------------------------- find the sites
+ONLY="${ONLY:-}"
+ONLY_DBS="${ONLY_DBS:-}"
 shopt -s nullglob
+SITE_NAMES=(); SITE_DIRS=()
 for dir in "$WWW_ROOT"/*/data/www/*/ "$WWW_ROOT"/*/ ; do
     dir="${dir%/}"
     case "$dir" in
@@ -49,6 +48,39 @@ for dir in "$WWW_ROOT"/*/data/www/*/ "$WWW_ROOT"/*/ ; do
         */data|*/data/www|*/httpd-cert|*/html) continue ;;
         *) [ -d "$dir/data/www" ] && continue; name="$(basename "$dir")" ;;
     esac
+    if [ -n "$ONLY" ]; then
+        match=0; for word in $ONLY; do case "$name" in *"$word"*) match=1 ;; esac; done
+        [ "$match" -eq 1 ] || continue
+    fi
+    SITE_NAMES+=("$name"); SITE_DIRS+=("$dir")
+done
+
+if [ "${LIST:-0}" = 1 ]; then
+    echo "Sites (use words from these names in ONLY=\"...\"):"; printf '  %s\n' "${SITE_NAMES[@]}"
+    if command -v mysql >/dev/null 2>&1 || command -v mariadb >/dev/null 2>&1; then
+        echo "Databases (use exact names in ONLY_DBS=\"...\"):"
+        # shellcheck disable=SC2086
+        "$(command -v mysql || command -v mariadb)" $MYSQL_OPTS -N -e 'SHOW DATABASES' 2>&1 | sed 's/^/  /'
+    fi
+    rm -rf "$OUT"; exit 0
+fi
+
+# ---------------------------------------------------------------- free space check
+need_kb=0
+for dir in "${SITE_DIRS[@]}"; do need_kb=$((need_kb + $(du -sk "$dir" 2>/dev/null | cut -f1))); done
+free_kb=$(df -Pk "$OUT" | awk 'NR==2 {print $4}')
+echo "Sites to back up: ${#SITE_DIRS[@]} ($((need_kb / 1024)) MB)   Free space in $OUT: $((free_kb / 1024)) MB"
+if [ "${FORCE:-0}" != 1 ] && [ "$free_kb" -lt $((need_kb + need_kb / 5)) ]; then
+    echo "Not enough free space (need roughly sites size + 20%). Use another disk/folder, or FORCE=1." >&2
+    exit 1
+fi
+[ "${#SITE_DIRS[@]}" -gt 0 ] || fail "no site matched ONLY=\"$ONLY\" (run with LIST=1 to see the names)"
+
+# ---------------------------------------------------------------- 1. every site as its own archive
+say "Sites"
+: > "$OUT/sites/INVENTORY.txt"
+for i in "${!SITE_DIRS[@]}"; do
+    dir="${SITE_DIRS[$i]}"; name="${SITE_NAMES[$i]}"
     archive="$OUT/sites/${name}.tar.gz"
     printf '%s\t%s\n' "$name" "$dir" >> "$OUT/sites/INVENTORY.txt"
     echo "-> $name"
@@ -73,6 +105,10 @@ if [ -n "$MYSQL_BIN" ] && [ -n "$DUMP_BIN" ]; then
     if dbs=$("$MYSQL_BIN" $MYSQL_OPTS -N -e 'SHOW DATABASES' 2>"$OUT/databases/mysql-error.txt"); then
         for db in $dbs; do
             case "$db" in information_schema|performance_schema|sys) continue ;; esac
+            if [ -n "$ONLY_DBS" ]; then
+                match=0; for want in $ONLY_DBS; do [ "$db" = "$want" ] && match=1; done
+                [ "$match" -eq 1 ] || continue
+            fi
             echo "-> $db"
             # shellcheck disable=SC2086
             if low "$DUMP_BIN" $MYSQL_OPTS --single-transaction --quick --routines --triggers --events --hex-blob "$db" 2>>"$OUT/databases/mysql-error.txt" | gzip > "$OUT/databases/${db}.sql.gz" \
@@ -92,9 +128,11 @@ fi
 
 # ---------------------------------------------------------------- 3. configuration, cron, certificates, mail
 say "Server configuration"
+[ "${SKIP_CONFIG:-0}" = 1 ] && echo "(skipped)"
 for path in /etc/nginx /etc/apache2 /etc/httpd /etc/php /etc/mysql /etc/my.cnf /etc/letsencrypt /etc/cron.d /etc/cron.daily \
             /etc/crontab /var/spool/cron /etc/fastpanel2 /etc/fastpanel /etc/proftpd /etc/exim4 /etc/postfix /etc/dovecot \
             /etc/fstab /etc/hosts /etc/ssh/sshd_config /etc/passwd /etc/group /etc/os-release /var/mail /var/vmail; do
+    [ "${SKIP_CONFIG:-0}" = 1 ] && break
     [ -e "$path" ] || continue
     low tar -czf "$OUT/config/$(echo "$path" | tr '/' '_' | sed 's/^_//').tar.gz" "$path" 2>/dev/null || echo "   (skipped unreadable parts of $path)"
 done
@@ -104,12 +142,14 @@ for user in $(cut -d: -f1 /etc/passwd); do crontab -l -u "$user" 2>/dev/null | s
 
 # ---------------------------------------------------------------- checksums + summary
 say "Checksums"
-( cd "$OUT" && find . -type f ! -name 'SHA256SUMS' ! -name 'backup.log*' -print0 | xargs -0 sha256sum > SHA256SUMS )
+if [ "${SKIP_CHECKSUMS:-0}" = 1 ]; then echo "(skipped)"; else
+    ( cd "$OUT" && find . -type f ! -name 'SHA256SUMS' ! -name 'backup.log*' -print0 | xargs -0 sha256sum > SHA256SUMS )
+fi
 rm -f "$LOG.tar"
 
 say "Summary"
 echo "Folder: $OUT   ($(du -sh "$OUT" | cut -f1))"
 echo "Sites archived: $(grep -c . "$OUT/sites/INVENTORY.txt")    Databases: $(find "$OUT/databases" -name '*.sql.gz' | wc -l)"
 if [ "$ERRORS" -eq 0 ]; then echo "RESULT: OK, no errors."; else echo "RESULT: $ERRORS problem(s) - read the ERROR lines above before relying on this backup."; fi
-echo "NEXT: copy the folder OFF this server (scp/rsync) and verify:  cd FOLDER && sha256sum -c SHA256SUMS"
+echo "NEXT: copy the folder OFF this server (scp/rsync) and verify (if checksums were made):  cd FOLDER && sha256sum -c SHA256SUMS"
 exit $((ERRORS > 0))
