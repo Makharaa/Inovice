@@ -24,14 +24,19 @@ $bodyClasses = array_filter([
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($invoice['invoice_number']) ?></title>
     <link rel="stylesheet" href="<?= asset('css/invoice.css') ?>">
-    <style>@page { size: A4 <?= $isCompact ? 'landscape' : 'portrait' ?>; margin: 0; }</style>
+    <style nonce="<?= e(csp_nonce()) ?>">@page { size: A4 <?= $isCompact ? 'landscape' : 'portrait' ?>; margin: 0; }</style>
 </head>
 <body class="<?= e(implode(' ', $bodyClasses)) ?>">
 <?php if (!$embedded && !$autoDownload): ?>
     <div class="document-toolbar">
-        <button type="button" onclick="window.print()">ბეჭდვა / PDF-ში შენახვა</button>
-        <button type="button" onclick="window.close()">დახურვა</button>
+        <button type="button" data-document-action="print">ბეჭდვა / PDF-ში შენახვა</button>
+        <button type="button" data-document-action="close">დახურვა</button>
     </div>
+    <script nonce="<?= e(csp_nonce()) ?>">
+        document.querySelectorAll('[data-document-action]').forEach((button) => {
+            button.addEventListener('click', () => (button.dataset.documentAction === 'print' ? window.print() : window.close()));
+        });
+    </script>
 <?php endif; ?>
 
 <?php if ($autoDownload): ?>
@@ -82,7 +87,7 @@ $bodyClasses = array_filter([
 
 <?php if ($autoDownload): ?>
     <script src="<?= asset('vendor/html2pdf.bundle.min.js') ?>"></script>
-    <script>
+    <script nonce="<?= e(csp_nonce()) ?>">
         (() => {
             const documentElement = document.getElementById('invoice-document');
             const screen = document.getElementById('download-screen');

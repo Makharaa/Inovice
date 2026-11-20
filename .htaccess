@@ -1,0 +1,11 @@
+# Defence in depth. The document root MUST be the "public" folder (see docs/INSTALLATION_GE.md);
+# if the project root is ever exposed by mistake, these rules keep source code, configuration and
+# documentation from being served.
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(app|config|database|docs|storage|tests)(/|$) - [F,L]
+    RewriteRule ^(bootstrap\.php|VERSION|README\.md|\.gitignore)$ - [F,L]
+    RewriteRule (^|/)\.git(/|$) - [F,L]
+</IfModule>

@@ -9,7 +9,7 @@ $home = function_exists('url') ? url('dashboard') : '/';
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex">
     <title>დროებითი შეცდომა — Makhara Invoice</title>
-    <style>
+    <style<?= function_exists('csp_nonce') ? ' nonce="' . htmlspecialchars(csp_nonce(), ENT_QUOTES, 'UTF-8') . '"' : '' ?>>
         *{box-sizing:border-box}
         body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f7f6;color:#17212b;font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
         main{width:min(520px,calc(100% - 32px));background:#fff;border:1px solid #e4e9ef;border-radius:22px;padding:32px;box-shadow:0 18px 60px rgba(25,39,52,.08)}

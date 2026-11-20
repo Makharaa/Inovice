@@ -23,6 +23,33 @@ function config(?string $key = null, mixed $default = null): mixed
     return $config;
 }
 
+/** Per-request nonce that allows this page's own inline <script>/<style> under the Content-Security-Policy. */
+function csp_nonce(): string
+{
+    static $nonce = null;
+
+    return $nonce ??= base64_encode(random_bytes(16));
+}
+
+/** Sends the Content-Security-Policy header; $extra directives are appended (a repeated call replaces the header). */
+function send_csp(string $extra = ''): void
+{
+    $nonce = csp_nonce();
+    header(
+        "Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}'; "
+        . "style-src 'self' 'nonce-{$nonce}'; img-src 'self' data: blob:; font-src 'self' data:; "
+        . "connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; "
+        . "base-uri 'self'; object-src 'none'" . ($extra !== '' ? '; ' . $extra : '')
+    );
+}
+
+/** True when the site is served over HTTPS (also behind a TLS-terminating proxy, thanks to app.url). */
+function request_is_https(): bool
+{
+    return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || str_starts_with(strtolower((string) config('app.url', '')), 'https://');
+}
+
 function e(mixed $value): string
 {
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');

@@ -196,3 +196,29 @@ foreach ([
 }
 
 echo "ErrorHandler tests passed.\n";
+
+// HTTPS detection (cookie Secure flag, HSTS) must also work behind a TLS-terminating proxy.
+require dirname(__DIR__) . '/app/Support/helpers.php';
+$httpsCases = [
+    ['server' => ['HTTPS' => 'on'], 'url' => 'http://x.test', 'expected' => true],
+    ['server' => ['HTTPS' => 'off'], 'url' => 'http://x.test', 'expected' => false],
+    ['server' => [], 'url' => 'http://x.test', 'expected' => false],
+    ['server' => [], 'url' => 'https://invoice.example', 'expected' => true],   // proxy: PHP itself only sees HTTP
+    ['server' => ['HTTPS' => 'off'], 'url' => 'HTTPS://Invoice.example', 'expected' => true],
+    ['server' => [], 'url' => '', 'expected' => false],
+];
+foreach ($httpsCases as $index => $case) {
+    $_SERVER = $case['server'];
+    $GLOBALS['app_config'] = ['app' => ['url' => $case['url']]];
+    if (request_is_https() !== $case['expected']) {
+        throw new RuntimeException("request_is_https case {$index} failed.");
+    }
+}
+$_SERVER = [];
+
+$nonce = csp_nonce();
+if ($nonce !== csp_nonce() || strlen((string) base64_decode($nonce, true)) < 16) {
+    throw new RuntimeException('CSP nonce must be stable per request and at least 128 bit.');
+}
+
+echo "HTTPS/CSP helper tests passed.\n";

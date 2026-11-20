@@ -39,7 +39,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_set_cookie_params([
         'lifetime' => 0,
         'path' => '/',
-        'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+        'secure' => request_is_https(),
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
@@ -51,6 +51,10 @@ if (PHP_SAPI !== 'cli' && !headers_sent()) {
     header('X-Frame-Options: SAMEORIGIN');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+    send_csp();
+    if (request_is_https()) {
+        header('Strict-Transport-Security: max-age=15552000'); // 180 days
+    }
     header('Cache-Control: private, no-store, max-age=0');
 }
 

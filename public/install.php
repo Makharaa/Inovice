@@ -7,6 +7,11 @@ $configFile = $basePath . '/storage/config.php';
 $errors = [];
 $success = false;
 
+header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: no-referrer');
+header('Cache-Control: no-store');
+
 session_name('makhara_invoice_installer');
 session_start();
 

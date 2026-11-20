@@ -192,6 +192,11 @@ final class InvoiceController extends Controller
             $this->notFound();
         }
 
+        if ($autoDownload) {
+            // The bundled html2pdf library injects inline styles while building the PDF. Scripts stay nonce-only.
+            send_csp("style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'");
+        }
+
         $language = in_array($invoice['language'], ['ka', 'en', 'ru'], true) ? $invoice['language'] : 'ka';
         $labels = require BASE_PATH . "/app/Lang/{$language}/invoice.php";
         $documentPages = (new InvoiceDocumentPaginator())->paginate(

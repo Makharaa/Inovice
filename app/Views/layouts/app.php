@@ -14,7 +14,7 @@ $validationErrors = errors();
     <meta name="theme-color" content="#f4f7f6">
     <meta name="color-scheme" content="light dark">
     <title><?= e($pageTitle ?? 'Makhara Invoice') ?> — Makhara Invoice</title>
-    <script>
+    <script nonce="<?= e(csp_nonce()) ?>">
         (() => {
             try {
                 const savedTheme = localStorage.getItem('makhara-theme');
