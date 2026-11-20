@@ -357,6 +357,11 @@ dd {
     width: 100%;
 }
 
+.side-form > .button.wide {
+    width: calc(100% - 44px);
+    margin: 18px 22px 0;
+}
+
 .button.large {
     min-height: 49px;
 }

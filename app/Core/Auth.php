@@ -26,7 +26,10 @@ final class Auth
         }
 
         session_regenerate_id(true);
+        unset($_SESSION['_csrf']); // never carry the pre-login CSRF token into the authenticated session
         $_SESSION['user_id'] = (int) $user['id'];
+        $_SESSION['pw_fp'] = self::fingerprint((string) $user['password_hash']);
+        unset($user['password_hash']);
         self::$resolvedUser = $user;
         self::$resolved = true;
 
@@ -55,16 +58,18 @@ final class Auth
         }
 
         $statement = Database::connection()->prepare(
-            'SELECT id, name, email, role, is_active, last_login_at, last_login_ip
+            'SELECT id, name, email, role, is_active, last_login_at, last_login_ip, password_hash
              FROM users WHERE id = :id AND is_active = 1 AND deleted_at IS NULL'
         );
         $statement->execute(['id' => $id]);
         $user = $statement->fetch(PDO::FETCH_ASSOC);
 
-        if (!$user) {
+        // A changed password ends every session that was opened with the old one.
+        if (!$user || !hash_equals(self::fingerprint((string) $user['password_hash']), (string) ($_SESSION['pw_fp'] ?? ''))) {
             self::logout();
             return null;
         }
+        unset($user['password_hash']);
 
         self::$resolvedUser = $user;
         return $user;
@@ -85,12 +90,40 @@ final class Auth
         return (self::user()['role'] ?? null) === 'admin';
     }
 
+    /**
+     * Call after the signed-in user's own password changed: keeps this session alive
+     * (all other sessions of the user become invalid) and starts a fresh session id and CSRF token.
+     */
+    public static function refreshAfterPasswordChange(): void
+    {
+        $id = (int) ($_SESSION['user_id'] ?? 0);
+        $statement = Database::connection()->prepare(
+            'SELECT password_hash FROM users WHERE id = :id AND is_active = 1 AND deleted_at IS NULL'
+        );
+        $statement->execute(['id' => $id]);
+        $hash = $statement->fetchColumn();
+
+        if ($hash === false) {
+            self::logout();
+            return;
+        }
+
+        $_SESSION['pw_fp'] = self::fingerprint((string) $hash);
+        unset($_SESSION['_csrf']);
+        session_regenerate_id(true);
+    }
+
     public static function logout(): void
     {
         self::$resolved = true;
         self::$resolvedUser = null;
-        unset($_SESSION['user_id']);
+        unset($_SESSION['user_id'], $_SESSION['pw_fp'], $_SESSION['_csrf']);
         session_regenerate_id(true);
+    }
+
+    private static function fingerprint(string $passwordHash): string
+    {
+        return hash('sha256', $passwordHash);
     }
 }
 

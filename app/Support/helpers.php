@@ -87,7 +87,7 @@ function flash(string $key, mixed $value = null): mixed
 
 function keep_old(array $input): void
 {
-    unset($input['password'], $input['password_confirmation'], $input['_token']);
+    unset($input['password'], $input['password_confirmation'], $input['current_password'], $input['_token']);
     $_SESSION['_old'] = $input;
 }
 

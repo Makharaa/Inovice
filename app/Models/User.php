@@ -93,6 +93,17 @@ final class User
         ]);
     }
 
+    public static function verifyPassword(int $id, string $password): bool
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT password_hash FROM users WHERE id = :id AND is_active = 1 AND deleted_at IS NULL'
+        );
+        $statement->execute(['id' => $id]);
+        $hash = $statement->fetchColumn();
+
+        return is_string($hash) && password_verify($password, $hash);
+    }
+
     public static function updatePassword(int $id, string $password): void
     {
         $statement = Database::connection()->prepare(

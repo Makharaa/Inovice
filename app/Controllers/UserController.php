@@ -107,6 +107,9 @@ final class UserController extends Controller
         }
 
         User::updatePassword((int) $id, $password);
+        if ((int) $id === Auth::id()) {
+            Auth::refreshAfterPasswordChange();
+        }
         flash('success', 'მომხმარებლის პაროლი შეიცვალა.');
         redirect("users/{$id}/edit");
     }
