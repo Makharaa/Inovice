@@ -20,6 +20,8 @@ spl_autoload_register(static function (string $class): void {
 
 require BASE_PATH . '/app/Support/helpers.php';
 
+\App\Support\ErrorHandler::register();
+
 $configFile = BASE_PATH . '/storage/config.php';
 
 if (!is_file($configFile)) {

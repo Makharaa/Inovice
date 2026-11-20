@@ -166,3 +166,33 @@ if ($numbers !== range(1, 35)) {
 }
 
 echo "InvoiceDocumentPaginator tests passed.\n";
+
+// ErrorHandler: an uncaught exception and a fatal error are logged with a reference and do not leak details.
+foreach ([
+    'exception' => "throw new RuntimeException('secret db detail');",
+    'fatal' => "\$a = []; while (true) { \$a[] = str_repeat('x', 1000000); }",
+] as $kind => $code) {
+    $base = sys_get_temp_dir() . '/invoice-errtest-' . bin2hex(random_bytes(4));
+    mkdir($base . '/storage/logs', 0777, true);
+    $script = "define('BASE_PATH', " . var_export($base, true) . "); require " . var_export(dirname(__DIR__) . '/app/Support/ErrorHandler.php', true)
+        . "; App\\Support\\ErrorHandler::register(); {$code}";
+    file_put_contents($base . '/case.php', "<?php\n" . $script); // not `php -r`: it bypasses exception handlers
+    exec(escapeshellarg(PHP_BINARY) . ' -d memory_limit=4M -d display_errors=0 ' . escapeshellarg($base . '/case.php') . ' 2>&1', $output);
+    $logs = glob($base . '/storage/logs/app-*.log') ?: [];
+    $log = $logs ? (string) file_get_contents($logs[0]) : '';
+    $shown = implode("\n", $output);
+    $output = [];
+    if (!preg_match('/#([0-9a-f]{8}) /', $log, $match) || !str_contains($shown, $match[1])) {
+        throw new RuntimeException("ErrorHandler ({$kind}): reference missing from log or output.");
+    }
+    if (str_contains($shown, 'secret db detail')) {
+        throw new RuntimeException("ErrorHandler ({$kind}): internal detail leaked to the user.");
+    }
+    array_map('unlink', $logs);
+    unlink($base . '/case.php');
+    rmdir($base . '/storage/logs');
+    rmdir($base . '/storage');
+    rmdir($base);
+}
+
+echo "ErrorHandler tests passed.\n";
