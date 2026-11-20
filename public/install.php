@@ -76,6 +76,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]
             );
 
+            // Never run against a database that already holds users: if storage/config.php was lost
+            // (deploy, cleanup, migration), the installer would otherwise let a stranger add an admin.
+            if ($pdo->query("SHOW TABLES LIKE 'users'")->fetchColumn() !== false
+                && (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn() > 0) {
+                throw new RuntimeException(
+                    'ეს ბაზა უკვე შეიცავს მომხმარებლებს, ამიტომ ინსტალერი მასზე არ გაეშვება. '
+                    . 'თუ storage/config.php დაიკარგა, აღადგინეთ ის სარეზერვო ასლიდან ან config/config.example.php-დან.'
+                );
+            }
+
             $schema = file_get_contents($basePath . '/database/schema.sql');
             if ($schema === false) {
                 throw new RuntimeException('schema.sql ვერ მოიძებნა.');
