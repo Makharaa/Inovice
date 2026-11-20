@@ -16,8 +16,9 @@ final class User
                 FROM users WHERE deleted_at IS NULL';
 
         if ($search !== '') {
-            $sql .= ' AND (name LIKE :search OR email LIKE :search)';
-            $parameters['search'] = '%' . $search . '%';
+            $sql .= ' AND (name LIKE :search_name OR email LIKE :search_email)';
+            // one named placeholder per use: native prepared statements reject repeats
+            $parameters['search_name'] = $parameters['search_email'] = '%' . $search . '%';
         }
 
         $sql .= ' ORDER BY created_at DESC';
@@ -129,7 +130,7 @@ final class User
     {
         $statement = Database::connection()->prepare(
             'UPDATE users SET
-                email = CONCAT("deleted+", id, "+", LEFT(email, 150)),
+                email = CONCAT(\'deleted+\', id, \'+\', LEFT(email, 150)),
                 deleted_at = NOW(), is_active = 0, updated_at = NOW()
              WHERE id = :id AND deleted_at IS NULL'
         );

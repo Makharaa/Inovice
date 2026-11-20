@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $admin = $pdo->prepare(
                 'INSERT INTO users (name, email, password_hash, role, is_active)
-                 VALUES (:name, :email, :password_hash, "admin", 1)'
+                 VALUES (:name, :email, :password_hash, \'admin\', 1)'
             );
             $admin->execute([
                 'name' => trim((string) $_POST['admin_name']),

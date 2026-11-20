@@ -59,7 +59,7 @@ final class Invoice
     ): array {
         [$where, $parameters] = self::filterSql($userId, $admin, $filters);
         $sql = 'SELECT invoices.*, users.name AS owner_name,
-                       JSON_UNQUOTE(JSON_EXTRACT(invoices.client_snapshot, "$.name")) AS client_name
+                       JSON_UNQUOTE(JSON_EXTRACT(invoices.client_snapshot, \'$.name\')) AS client_name
                 FROM invoices
                 JOIN users ON users.id = invoices.user_id
                 ' . $where . '
@@ -100,7 +100,7 @@ final class Invoice
         $scope = $admin ? 'invoices.deleted_at IS NULL' : 'invoices.user_id = :user_id AND invoices.deleted_at IS NULL';
         $parameters = $admin ? [] : ['user_id' => $userId];
         $sql = 'SELECT invoices.*, users.name AS owner_name,
-                       JSON_UNQUOTE(JSON_EXTRACT(invoices.client_snapshot, "$.name")) AS client_name
+                       JSON_UNQUOTE(JSON_EXTRACT(invoices.client_snapshot, \'$.name\')) AS client_name
                 FROM invoices JOIN users ON users.id = invoices.user_id
                 WHERE ' . $scope . '
                 ORDER BY invoices.created_at DESC LIMIT ' . (int) $limit;
@@ -133,9 +133,10 @@ final class Invoice
         }
 
         if (!empty($filters['search'])) {
-            $clauses[] = '(invoices.invoice_number LIKE :search
-                OR JSON_UNQUOTE(JSON_EXTRACT(invoices.client_snapshot, "$.name")) LIKE :search)';
-            $parameters['search'] = '%' . trim((string) $filters['search']) . '%';
+            // one named placeholder per use: native prepared statements reject repeats
+            $clauses[] = '(invoices.invoice_number LIKE :search_number
+                OR JSON_UNQUOTE(JSON_EXTRACT(invoices.client_snapshot, \'$.name\')) LIKE :search_client)';
+            $parameters['search_number'] = $parameters['search_client'] = '%' . trim((string) $filters['search']) . '%';
         }
 
         if (!empty($filters['status']) && in_array($filters['status'], ['draft', 'issued'], true)) {

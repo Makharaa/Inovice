@@ -52,6 +52,8 @@ Database::configure([
 ]);
 
 $pdo = Database::connection();
+// Strictest common SQL modes: double quotes must be identifiers, GROUP BY must be exact.
+$pdo->exec("SET SESSION sql_mode = CONCAT_WS(',', @@sql_mode, 'ANSI_QUOTES', 'ONLY_FULL_GROUP_BY', 'STRICT_ALL_TABLES')");
 $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
 foreach ($pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) as $table) {
     $pdo->exec('DROP TABLE `' . $table . '`');
@@ -227,6 +229,26 @@ Database::connection()->exec("INSERT INTO login_attempts (email, ip_address, att
 $before = (int) Database::connection()->query('SELECT COUNT(*) FROM login_attempts')->fetchColumn();
 check('purge removes only rows older than a day', $throttle->purgeOld() === 1
     && (int) Database::connection()->query('SELECT COUNT(*) FROM login_attempts')->fetchColumn() === $before - 1);
+
+// ---------------------------------------------------------------------------
+echo "\nQueries under ANSI_QUOTES / strict SQL mode\n";
+$qUser = make_user('queries@example.com');
+$qIssuer = make_issuer($qUser);
+$qClient = Client::create($qUser, ['entity_type' => 'company', 'name' => 'Searchable Client Ltd', 'identification_number' => '555']);
+make_invoice($qUser, $qIssuer, $qClient, date('Y-m-d'));
+$filters = ['search' => 'Searchable', 'status' => '', 'date_from' => '', 'date_to' => '', 'user_id' => 0];
+$rows = Invoice::paginated($qUser, false, $filters, 15, 0);
+check('invoice list search by client name (JSON path)', count($rows) === 1 && $rows[0]['client_name'] === 'Searchable Client Ltd');
+check('invoice count with search', Invoice::count($qUser, false, $filters) === 1);
+check('dashboard statistics', (int) Invoice::dashboardStats($qUser, false)['total_invoices'] === 1);
+check('recent invoices include client name', (Invoice::recent($qUser, false)[0]['client_name'] ?? '') === 'Searchable Client Ltd');
+check('client search by name / id number / e-mail', count(Client::allForUser($qUser, 'Searchable')) === 1
+    && count(Client::allForUser($qUser, '555')) === 1 && Client::countForUser($qUser, 'Searchable') === 1
+    && count(Client::allForUser($qUser, 'no-such-client')) === 0);
+check('user search by name and e-mail', count(User::all('queries@')) === 1 && count(User::all('nobody-here')) === 0);
+User::softDelete($qUser);
+$deletedEmail = (string) Database::connection()->query("SELECT email FROM users WHERE id = {$qUser}")->fetchColumn();
+check('soft-deleted user e-mail is released', str_starts_with($deletedEmail, "deleted+{$qUser}+"), $deletedEmail);
 
 // ---------------------------------------------------------------------------
 echo $failures === 0 ? "\nAll integration tests passed.\n" : "\n{$failures} integration check(s) FAILED.\n";

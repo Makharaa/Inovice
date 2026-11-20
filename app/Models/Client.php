@@ -15,8 +15,8 @@ final class Client
         $sql = 'SELECT * FROM clients WHERE user_id = :user_id AND deleted_at IS NULL';
 
         if ($search !== '') {
-            $sql .= ' AND (name LIKE :search OR identification_number LIKE :search OR email LIKE :search)';
-            $parameters['search'] = '%' . $search . '%';
+            $sql .= ' AND (name LIKE :search_name OR identification_number LIKE :search_id OR email LIKE :search_email)';
+            $parameters += self::searchParameters($search);
         }
 
         $sql .= ' ORDER BY updated_at DESC, name ASC';
@@ -36,13 +36,21 @@ final class Client
         $sql = 'SELECT COUNT(*) FROM clients WHERE user_id = :user_id AND deleted_at IS NULL';
 
         if ($search !== '') {
-            $sql .= ' AND (name LIKE :search OR identification_number LIKE :search OR email LIKE :search)';
-            $parameters['search'] = '%' . $search . '%';
+            $sql .= ' AND (name LIKE :search_name OR identification_number LIKE :search_id OR email LIKE :search_email)';
+            $parameters += self::searchParameters($search);
         }
 
         $statement = Database::connection()->prepare($sql);
         $statement->execute($parameters);
         return (int) $statement->fetchColumn();
+    }
+
+    /** Native prepared statements do not allow one named placeholder twice, hence one per column. */
+    private static function searchParameters(string $search): array
+    {
+        $like = '%' . $search . '%';
+
+        return ['search_name' => $like, 'search_id' => $like, 'search_email' => $like];
     }
 
     public static function findOwned(int $id, int $userId): ?array
