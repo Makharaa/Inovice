@@ -25,7 +25,7 @@ $pageScripts = ['invoice-editor.js'];
 <form class="invoice-editor" id="invoice-form" method="post" action="<?= $editing ? url('invoices/' . $invoice['id']) : url('invoices') ?>">
     <?= csrf_field() ?>
     <section class="card form-card">
-        <div class="card-header"><div><h3>ინვოისის პარამეტრები</h3><p><?= $editing ? 'ნომერი: ' . e($invoice['invoice_number']) : 'ნომერი შეიქმნება ავტომატურად შენახვისას' ?></p></div><span class="badge neutral"><?= $editing ? 'რედაქტირება' : 'ახალი' ?></span></div>
+        <div class="card-header"><div><h3>ინვოისის პარამეტრები</h3><p><?= $editing ? 'ნომერი: ' . e($invoice['invoice_number']) . ' · გამცემის ან წლის შეცვლისას ნომერი განახლდება' : 'ნომერი შეიქმნება ავტომატურად შენახვისას' ?></p></div><span class="badge neutral"><?= $editing ? 'რედაქტირება' : 'ახალი' ?></span></div>
         <div class="form-grid four">
             <div class="field span-2">
                 <label>გამცემი *</label>

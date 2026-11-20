@@ -168,5 +168,37 @@ $copy = (new InvoiceService())->duplicate($issued, $lockUser);
 check('issued invoice can be duplicated as a draft', (string) Database::connection()->query("SELECT status FROM invoices WHERE id = {$copy}")->fetchColumn() === 'draft');
 
 // ---------------------------------------------------------------------------
+echo "\nChanging issuer or year of a draft\n";
+$mvUser = make_user('move@example.com');
+$issuerA = make_issuer($mvUser, ['name' => 'A', 'invoice_prefix' => 'AAA']);
+$issuerB = make_issuer($mvUser, ['name' => 'B', 'invoice_prefix' => 'BBB', 'is_default' => 0]);
+$mvClient = make_client($mvUser);
+make_invoice($mvUser, $issuerB, $mvClient, '2026-03-01');                    // BBB-2026-0001 (issued)
+$movable = make_invoice($mvUser, $issuerA, $mvClient, '2026-03-02', 'draft'); // AAA-2026-0001 (draft)
+check('draft starts with the number of its issuer', number_of($movable) === 'AAA-2026-0001');
+
+$edit = static fn (int $issuerId, string $date): array => [
+    'issuer_id' => $issuerId, 'client_id' => $mvClient, 'issue_date' => $date, 'status' => 'draft',
+    'items' => [['description' => 'Service', 'unit' => 'pcs', 'quantity' => 1, 'unit_price' => 100]],
+];
+
+(new InvoiceService())->update($movable, $mvUser, $edit($issuerA, '2026-04-10'));
+check('editing within the same issuer and year keeps the number', number_of($movable) === 'AAA-2026-0001');
+
+(new InvoiceService())->update($movable, $mvUser, $edit($issuerB, '2026-04-10'));
+check('moving to another issuer takes that issuer\'s next number', number_of($movable) === 'BBB-2026-0002', number_of($movable));
+check('invoice now belongs to the new issuer', (int) Database::connection()->query("SELECT issuer_id FROM invoices WHERE id = {$movable}")->fetchColumn() === $issuerB);
+
+(new InvoiceService())->update($movable, $mvUser, $edit($issuerB, '2025-12-20'));
+check('changing the year renumbers within that year', number_of($movable) === 'BBB-2025-0001', number_of($movable));
+
+// Old behaviour: same number at two issuers could collide. Both issuers have ...-2026-0001 free/used.
+$collide = make_invoice($mvUser, $issuerA, $mvClient, '2026-06-01', 'draft');
+(new InvoiceService())->update($collide, $mvUser, $edit($issuerB, '2026-06-01'));
+check('moving a draft never hits a duplicate-number error', str_starts_with(number_of($collide), 'BBB-2026-'), number_of($collide));
+$numbers = Database::connection()->query("SELECT COUNT(*) - COUNT(DISTINCT issuer_id, invoice_number) FROM invoices")->fetchColumn();
+check('no duplicate numbers anywhere', (int) $numbers === 0);
+
+// ---------------------------------------------------------------------------
 echo $failures === 0 ? "\nAll integration tests passed.\n" : "\n{$failures} integration check(s) FAILED.\n";
 exit($failures === 0 ? 0 : 1);

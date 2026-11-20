@@ -110,23 +110,37 @@ final class InvoiceService
                 throw new UserFacingException(Invoice::LOCKED_MESSAGE);
             }
 
+            $issueDate = $this->validDate((string) ($input['issue_date'] ?? '')) ?: $current['issue_date'];
+
+            // The number belongs to one issuer and one year. If a draft moves to another issuer or year,
+            // it takes the next free number there instead of colliding with (or mislabelling) the old one.
+            $number = (string) $current['invoice_number'];
+            if ((int) $issuer['id'] !== (int) $current['issuer_id']
+                || substr($issueDate, 0, 4) !== substr((string) $current['issue_date'], 0, 4)) {
+                $number = (new InvoiceNumberService())->reserve(
+                    (int) $issuer['id'],
+                    $userId,
+                    (int) substr($issueDate, 0, 4)
+                );
+            }
+
             $payload = $this->invoicePayload(
                 $userId,
                 $issuer,
                 $client,
                 $input,
                 $calculation,
-                (string) $current['invoice_number'],
-                $this->validDate((string) ($input['issue_date'] ?? '')) ?: $current['issue_date']
+                $number,
+                $issueDate
             );
-            unset($payload['user_id'], $payload['invoice_number']);
+            unset($payload['user_id']);
             $payload['id'] = $invoiceId;
             $payload['owner_id'] = $userId;
 
             $statement = $pdo->prepare(
                 'UPDATE invoices SET
-                    issuer_id = :issuer_id, client_id = :client_id, language = :language,
-                    template_key = :template_key, issue_date = :issue_date, due_date = :due_date,
+                    issuer_id = :issuer_id, client_id = :client_id, invoice_number = :invoice_number,
+                    language = :language, template_key = :template_key, issue_date = :issue_date, due_date = :due_date,
                     currency = :currency, prices_include_vat = :prices_include_vat,
                     vat_rate = :vat_rate, status = :status, issuer_snapshot = :issuer_snapshot,
                     client_snapshot = :client_snapshot, subtotal = :subtotal,
