@@ -10,10 +10,21 @@ use PDO;
 
 final class InvoiceNumberService
 {
+    /**
+     * Reserves the next invoice number for the given issuer and year.
+     *
+     * The number is derived from the invoices that already exist (soft-deleted ones
+     * included, because their numbers are never reused) instead of a stored counter.
+     * This keeps every year's sequence independent, so back-dated invoices cannot
+     * corrupt the numbering of the current year.
+     *
+     * Must be called inside a transaction: the issuer row is locked to serialise
+     * concurrent reservations for the same issuer.
+     */
     public function reserve(int $issuerId, int $userId, int $year): string
     {
         $statement = Database::connection()->prepare(
-            'SELECT id, invoice_prefix, next_invoice_number, numbering_year
+            'SELECT id, invoice_prefix
              FROM issuers
              WHERE id = :id AND user_id = :user_id AND deleted_at IS NULL
              FOR UPDATE'
@@ -25,24 +36,19 @@ final class InvoiceNumberService
             throw new UserFacingException('გამცემი ვერ მოიძებნა.');
         }
 
-        $next = (int) $issuer['next_invoice_number'];
-        if ((int) $issuer['numbering_year'] !== $year) {
-            $next = 1;
-        }
-
-        $number = sprintf('%s-%d-%04d', $issuer['invoice_prefix'] ?: 'INV', $year, $next);
-
-        $update = Database::connection()->prepare(
-            'UPDATE issuers
-             SET next_invoice_number = :next_number, numbering_year = :year, updated_at = NOW()
-             WHERE id = :id'
+        $prefix = ($issuer['invoice_prefix'] ?: 'INV') . '-' . $year . '-';
+        $last = Database::connection()->prepare(
+            'SELECT MAX(CAST(SUBSTRING(invoice_number, :offset) AS UNSIGNED))
+             FROM invoices
+             WHERE issuer_id = :issuer_id AND LEFT(invoice_number, :length) = :prefix'
         );
-        $update->execute([
-            'next_number' => $next + 1,
-            'year' => $year,
-            'id' => $issuerId,
+        $last->execute([
+            'offset' => mb_strlen($prefix) + 1,
+            'issuer_id' => $issuerId,
+            'length' => mb_strlen($prefix),
+            'prefix' => $prefix,
         ]);
 
-        return $number;
+        return $prefix . sprintf('%04d', ((int) $last->fetchColumn()) + 1);
     }
 }
